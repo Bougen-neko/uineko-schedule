@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ういねこ ＆ くまさん スケジュール帳</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fdf4ff; min-height: 100vh; }
+
+    .header {
+      background: #fdf4ff;
+      border-bottom: 1px solid #e8d5f5;
+      padding: 14px 20px;
+      display: flex; align-items: center; gap: 12px;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .header-title { font-size: 17px; font-weight: 600; color: #6b21a8; }
+    .header-sub { font-size: 11px; color: #a78bc4; margin-top: 1px; }
+    .month-nav { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .nav-btn {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 1px solid #d8b4f0; background: white; color: #9c59c7;
+      cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center;
+    }
+    .nav-btn:hover { background: #f3e8ff; }
+    .month-label { font-size: 15px; font-weight: 600; color: #7c3aac; min-width: 100px; text-align: center; }
+
+    .user-switch { display: flex; border-bottom: 1px solid #e8d5f5; background: #fdf4ff; }
+    .user-tab {
+      flex: 1; padding: 11px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      cursor: pointer; font-size: 14px; font-weight: 500; color: #a78bc4;
+      border-bottom: 3px solid transparent; transition: all 0.15s;
+    }
+    .user-tab.active-cat { color: #7c3aac; border-bottom-color: #c084f0; background: white; }
+    .user-tab.active-bear { color: #92400e; border-bottom-color: #b45309; background: white; }
+    .user-tab:hover { background: #f9f0ff; }
+
+    .main { display: flex; height: calc(100vh - 115px); }
+
+    .calendar-panel {
+      width: 340px; flex-shrink: 0;
+      border-right: 1px solid #e8d5f5;
+      padding: 14px; background: white;
+      overflow-y: auto;
+    }
+    .weekdays { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 4px; }
+    .weekday { text-align: center; font-size: 11px; color: #a78bc4; padding: 4px 0; font-weight: 600; }
+    .weekday.sun { color: #d4537e; } .weekday.sat { color: #7c6fd4; }
+
+    .days-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+    .day-cell {
+      aspect-ratio: 1; border-radius: 8px;
+      display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+      padding: 4px 2px 2px; cursor: pointer; transition: background 0.1s;
+    }
+    .day-cell:hover { background: #f3e8ff; }
+    .day-cell.other-month .day-num { opacity: 0.25; }
+    .day-num {
+      font-size: 12px; color: #333;
+      width: 22px; height: 22px;
+      display: flex; align-items: center; justify-content: center; border-radius: 50%;
+    }
+    .day-cell.today .day-num { background: #c084f0; color: white; }
+    .day-cell.selected { background: #ede0ff; }
+    .day-cell.selected .day-num { background: #7c3aac; color: white; }
+    .day-cell.sun .day-num { color: #d4537e; }
+    .day-cell.sat .day-num { color: #7c6fd4; }
+    .day-cell.today .day-num, .day-cell.selected .day-num { color: white !important; }
+
+    .event-dots { display: flex; gap: 2px; margin-top: 2px; justify-content: center; }
+    .event-dot { width: 5px; height: 5px; border-radius: 50%; }
+
+    .footer-paw { text-align: center; font-size: 12px; color: #c084f0; margin-top: 14px; }
+
+    .detail-panel { flex: 1; padding: 20px; overflow-y: auto; background: #fafafa; }
+    .detail-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .detail-date { font-size: 16px; font-weight: 600; color: #333; }
+    .add-btn {
+      padding: 7px 16px; border-radius: 20px;
+      border: 1px solid #c084f0; background: white; color: #9333ea;
+      font-size: 13px; cursor: pointer; font-weight: 500;
+    }
+    .add-btn.bear-mode { border-color: #b45309; color: #92400e; }
+    .add-btn:hover { background: #f3e8ff; }
+    .add-btn.bear-mode:hover { background: #fef3c7; }
+
+    .event-list { display: flex; flex-direction: column; gap: 8px; }
+    .event-card {
+      border-radius: 10px; padding: 12px 14px;
+      border-left: 3px solid;
+      background: white;
+      border-top: 1px solid #eee; border-right: 1px solid #eee; border-bottom: 1px solid #eee;
+      display: flex; align-items: flex-start; gap: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .event-owner { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+    .event-info { flex: 1; min-width: 0; }
+    .event-title { font-size: 14px; font-weight: 600; color: #333; }
+    .event-meta { font-size: 12px; color: #888; margin-top: 3px; }
+    .event-note { font-size: 12px; color: #999; margin-top: 3px; font-style: italic; }
+    .event-delete { background: none; border: none; color: #ccc; cursor: pointer; font-size: 18px; padding: 0 2px; line-height: 1; }
+    .event-delete:hover { color: #d4537e; }
+    .event-delete.hidden { visibility: hidden; pointer-events: none; }
+
+    .empty-state { text-align: center; padding: 40px 20px; color: #bbb; font-size: 14px; line-height: 2.4; }
+
+    .legend {
+      display: flex; gap: 16px; padding: 8px 16px;
+      border-top: 1px solid #e8d5f5; background: #fdf4ff;
+      font-size: 12px; color: #888; align-items: center;
+    }
+    .legend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(80,40,100,0.35);
+      display: flex; align-items: center; justify-content: center; z-index: 100;
+    }
+    .modal {
+      background: white; border-radius: 18px; padding: 24px; width: 300px;
+      border: 1px solid #e8d5f5; box-shadow: 0 8px 32px rgba(100,50,150,0.15);
+    }
+    .modal h3 { font-size: 15px; font-weight: 600; color: #7c3aac; margin-bottom: 14px; }
+    .modal h3.bear { color: #92400e; }
+    .modal label { font-size: 12px; color: #888; display: block; margin-bottom: 4px; margin-top: 10px; }
+    .modal input, .modal select, .modal textarea {
+      width: 100%; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid #ddd; font-size: 13px;
+      font-family: inherit; color: #333;
+    }
+    .modal input:focus, .modal select:focus, .modal textarea:focus { outline: none; border-color: #c084f0; }
+    .modal textarea { resize: vertical; min-height: 56px; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+    .btn-cancel {
+      flex: 1; padding: 9px; border-radius: 9px;
+      border: 1px solid #ddd; background: #f5f5f5; color: #888; cursor: pointer; font-size: 13px;
+    }
+    .btn-save {
+      flex: 1; padding: 9px; border-radius: 9px;
+      border: none; background: #9c59c7; color: white; cursor: pointer; font-size: 13px; font-weight: 600;
+    }
+    .btn-save.bear { background: #b45309; }
+    .btn-save:hover { opacity: 0.88; }
+
+    .loading-overlay {
+      position: fixed; inset: 0; background: #fdf4ff;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200;
+      gap: 16px; font-size: 15px; color: #a78bc4;
+    }
+
+    @media (max-width: 640px) {
+      .main { flex-direction: column; height: auto; }
+      .calendar-panel { width: 100%; border-right: none; border-bottom: 1px solid #e8d5f5; }
+      .detail-panel { min-height: 300px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+  <svg width="60" height="60" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+    <path d="M14 26 Q11 14 19 18 Q16 24 14 26Z" fill="#f0f0f0" stroke="#ccc" stroke-width="0.8"/>
+    <path d="M42 26 Q45 14 37 18 Q40 24 42 26Z" fill="#f0f0f0" stroke="#ccc" stroke-width="0.8"/>
+    <path d="M15 25 Q13 17 19 19 Q17 23 15 25Z" fill="#f8c8d8"/>
+    <path d="M41 25 Q43 17 37 19 Q39 23 41 25Z" fill="#f8c8d8"/>
+    <circle cx="28" cy="33" r="17" fill="#f8f8f8" stroke="#ddd" stroke-width="0.8"/>
+    <circle cx="22" cy="30" r="1.8" fill="#333"/><circle cx="34" cy="30" r="1.8" fill="#333"/>
+    <circle cx="22.7" cy="29.3" r="0.6" fill="white"/><circle cx="34.7" cy="29.3" r="0.6" fill="white"/>
+    <ellipse cx="28" cy="34" rx="1.5" ry="1.1" fill="#f0a0b8"/>
+    <path d="M25.5 35.5 Q28 37.5 30.5 35.5" fill="none" stroke="#ccc" stroke-width="0.8" stroke-linecap="round"/>
+    <ellipse cx="19.5" cy="33" rx="3.5" ry="2.2" fill="#ffd0e0" opacity="0.5"/>
+    <ellipse cx="36.5" cy="33" rx="3.5" ry="2.2" fill="#ffd0e0" opacity="0.5"/>
+    <line x1="10" y1="32" x2="20" y2="33.5" stroke="#ccc" stroke-width="0.7" stroke-linecap="round"/>
+    <line x1="10" y1="34.5" x2="20" y2="34.5" stroke="#ccc" stroke-width="0.7" stroke-linecap="round"/>
+    <line x1="46" y1="32" x2="36" y2="33.5" stroke="#ccc" stroke-width="0.7" stroke-linecap="round"/>
+    <line x1="46" y1="34.5" x2="36" y2="34.5" stroke="#ccc" stroke-width="0.7" stroke-linecap="round"/>
+  </svg>
+  よみこみちゅう…
+</div>
+
+<div id="app" style="display:none;">
+  <div class="header">
+    <svg width="34" height="34" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+      <path d="M14 26 Q11 14 19 18 Q16 24 14 26Z" fill="#f0f0f0" stroke="#ccc" stroke-width="0.8"/>
+      <path d="M42 26 Q45 14 37 18 Q40 24 42 26Z" fill="#f0f0f0" stroke="#ccc" stroke-width="0.8"/>
+      <path d="M15 25 Q13 17 19 19 Q17 23 15 25Z" fill="#f8c8d8"/>
+      <path d="M41 25 Q43 17 37 19 Q39 23 41 25Z" fill="#f8c8d8"/>
+      <circle cx="28" cy="33" r="17" fill="#f8f8f8" stroke="#ddd" stroke-width="0.8"/>
+      <circle cx="22" cy="30" r="1.8" fill="#333"/><circle cx="34" cy="30" r="1.8" fill="#333"/>
+      <circle cx="22.7" cy="29.3" r="0.6" fill="white"/><circle cx="34.7" cy="29.3" r="0.6" fill="white"/>
+      <ellipse cx="28" cy="34" rx="1.5" ry="1.1" fill="#f0a0b8"/>
+      <path d="M25.5 35.5 Q28 37.5 30.5 35.5" fill="none" stroke="#ccc" stroke-width="0.8" stroke-linecap="round"/>
+      <ellipse cx="19.5" cy="33" rx="3.5" ry="2.2" fill="#ffd0e0" opacity="0.5"/>
+      <ellipse cx="36.5" cy="33" rx="3.5" ry="2.2" fill="#ffd0e0" opacity="0.5"/>
+      <line x1="10" y1="32" x2="20" y2="33.5" stroke="#ccc" stroke-width="0.7" stroke-linecap="round"/>
+      <line x1="10" y1="34.5" x2="20" y2="34.5" stroke="#ccc" stroke-width="0.7" stroke-linecap="round"/>
+      <line x1="46" y1="32" x2="36" y2="33.5" stroke="#ccc" stroke-width="0.7" stroke-linecap="round"/>
+      <line x1="46" y1="34.5" x2="36" y2="34.5" stroke="#ccc" stroke-width="0.7" stroke-linecap="round"/>
+    </svg>
+    <svg width="34" height="34" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="16" cy="16" r="9" fill="#b07040" stroke="#8a5a2a" stroke-width="0.8"/>
+      <circle cx="40" cy="16" r="9" fill="#b07040" stroke="#8a5a2a" stroke-width="0.8"/>
+      <circle cx="28" cy="34" r="19" fill="#c0844c" stroke="#8a5a2a" stroke-width="0.8"/>
+      <ellipse cx="28" cy="38" rx="9" ry="6" fill="#e8b080"/>
+      <circle cx="21" cy="29" r="2.2" fill="#3a2010"/><circle cx="35" cy="29" r="2.2" fill="#3a2010"/>
+      <circle cx="21.8" cy="28.3" r="0.7" fill="white"/><circle cx="35.8" cy="28.3" r="0.7" fill="white"/>
+      <ellipse cx="28" cy="35" rx="2" ry="1.5" fill="#3a2010"/>
+      <ellipse cx="21" cy="33" rx="3" ry="2" fill="#e8a0a0" opacity="0.45"/>
+      <ellipse cx="35" cy="33" rx="3" ry="2" fill="#e8a0a0" opacity="0.45"/>
+    </svg>
+    <div>
+      <div class="header-title">ういねこ ＆ くまさん</div>
+      <div class="header-sub">ふたりの共有スケジュール帳</div>
+    </div>
+    <div class="month-nav">
+      <button class="nav-btn" onclick="changeMonth(-1)">&#8249;</button>
+      <span class="month-label" id="month-label"></span>
+      <button class="nav-btn" onclick="changeMonth(1)">&#8250;</button>
+    </div>
+  </div>
+
+  <div class="user-switch">
+    <div class="user-tab active-cat" id="tab-cat" onclick="switchUser('cat')">
+      <span style="font-size:20px;">🐱</span> ういねこ として入力
+    </div>
+    <div class="user-tab" id="tab-bear" onclick="switchUser('bear')">
+      <span style="font-size:20px;">🐻</span> くまさん として入力
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="calendar-panel">
+      <div class="weekdays">
+        <div class="weekday sun">日</div><div class="weekday">月</div><div class="weekday">火</div>
+        <div class="weekday">水</div><div class="weekday">木</div><div class="weekday">金</div>
+        <div class="weekday sat">土</div>
+      </div>
+      <div class="days-grid" id="days-grid"></div>
+      <div class="footer-paw">ฅ^•ﻌ•^ฅ 🐻</div>
+    </div>
+
+    <div class="detail-panel">
+      <div class="detail-header">
+        <div class="detail-date" id="detail-date">日付を選んでね</div>
+        <button class="add-btn" id="add-btn" onclick="openModal()">＋ 追加</button>
+      </div>
+      <div class="event-list" id="event-list">
+        <div class="empty-state">🐱🐻<br>日付を選んでね</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span>凡例：</span>
+    <span><span class="legend-dot" style="background:#c084f0;"></span>ういねこ</span>
+    <span><span class="legend-dot" style="background:#b45309;"></span>くまさん</span>
+    <span style="margin-left:auto; font-size:11px; color:#c084f0;">自分の予定のみ削除できます</span>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal" style="display:none;">
+  <div class="modal">
+    <h3 id="modal-title">🐱 ういねこ の予定を追加</h3>
+    <label>タイトル</label>
+    <input type="text" id="ev-title" placeholder="例：ランチ、会議…">
+    <label>時間</label>
+    <input type="text" id="ev-time" placeholder="例：13:00〜14:00">
+    <label>カテゴリ</label>
+    <select id="ev-cat">
+      <option value="date">💕 デート</option>
+      <option value="work">💼 仕事</option>
+      <option value="health">🌸 美容・健康</option>
+      <option value="food">🍰 グルメ</option>
+      <option value="travel">✈️ お出かけ</option>
+      <option value="other">🎀 その他</option>
+    </select>
+    <label>メモ</label>
+    <textarea id="ev-note" placeholder="ひとこと…"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">キャンセル</button>
+      <button class="btn-save" id="btn-save" onclick="saveEvent()">保存する</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ========== Supabase設定 ==========
+  const SUPABASE_URL = 'https://fmonhqhtcxaqdchfpqxt.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable__clApsRpe1PW7Els0d793Q_SyFgT4Ji';
+  const { createClient } = supabase;
+  const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  // ========== 定数 ==========
+  const CAT_COLORS = { date:'#d4537e', work:'#9c59c7', health:'#1D9E75', food:'#BA7517', travel:'#378ADD', other:'#c084f0' };
+  const BEAR_COLORS = { date:'#d97706', work:'#b45309', health:'#059669', food:'#dc2626', travel:'#2563eb', other:'#92400e' };
+  const CAT_ICONS  = { date:'💕', work:'💼', health:'🌸', food:'🍰', travel:'✈️', other:'🎀' };
+  const BEAR_ICONS = { date:'💕', work:'💼', health:'🏋️', food:'🍖', travel:'🗺️', other:'🐾' };
+
+  // ========== 状態 ==========
+  const todayReal = new Date();
+  let currentYear = todayReal.getFullYear();
+  let currentMonth = todayReal.getMonth();
+  let selectedDate = null;
+  let currentUser = 'cat';
+  let events = {}; // { dateKey: [event, ...] }
+
+  function dateKey(y, m, d) {
+    return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  const todayKey = dateKey(todayReal.getFullYear(), todayReal.getMonth(), todayReal.getDate());
+
+  // ========== DB操作 ==========
+  async function loadEvents() {
+    const { data, error } = await db.from('events').select('*').order('created_at');
+    if (error) { console.error(error); return; }
+    events = {};
+    data.forEach(ev => {
+      if (!events[ev.date_key]) events[ev.date_key] = [];
+      events[ev.date_key].push({
+        id: ev.id,
+        title: ev.title,
+        time: ev.time_str,
+        cat: ev.cat,
+        owner: ev.owner,
+        note: ev.note
+      });
+    });
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    renderCalendar();
+    selectDate(todayKey, todayReal.getDate());
+  }
+
+  async function insertEvent(ev) {
+    const { data, error } = await db.from('events').insert({
+      date_key: selectedDate,
+      title: ev.title,
+      time_str: ev.time,
+      cat: ev.cat,
+      owner: ev.owner,
+      note: ev.note
+    }).select().single();
+    if (error) { alert('保存に失敗したにゃ…'); console.error(error); return null; }
+    return data;
+  }
+
+  async function deleteEvent(id) {
+    const { error } = await db.from('events').delete().eq('id', id);
+    if (error) { alert('削除に失敗したにゃ…'); console.error(error); return false; }
+    return true;
+  }
+
+  // ========== UI ==========
+  function switchUser(u) {
+    currentUser = u;
+    document.getElementById('tab-cat').className = 'user-tab' + (u === 'cat' ? ' active-cat' : '');
+    document.getElementById('tab-bear').className = 'user-tab' + (u === 'bear' ? ' active-bear' : '');
+    document.getElementById('add-btn').className = 'add-btn' + (u === 'bear' ? ' bear-mode' : '');
+    if (selectedDate) renderEvents(selectedDate);
+  }
+
+  function renderCalendar() {
+    const grid = document.getElementById('days-grid');
+    const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    document.getElementById('month-label').textContent = `${currentYear}年 ${months[currentMonth]}`;
+    const first = new Date(currentYear, currentMonth, 1).getDay();
+    const dim = new Date(currentYear, currentMonth+1, 0).getDate();
+    const prevDim = new Date(currentYear, currentMonth, 0).getDate();
+    grid.innerHTML = '';
+    let cells = [];
+    for (let i = first-1; i >= 0; i--) cells.push({d: prevDim-i, cur: false});
+    for (let d = 1; d <= dim; d++) cells.push({d, cur: true});
+    while (cells.length % 7 !== 0) cells.push({d: cells.length-dim-first+1, cur: false});
+
+    cells.forEach(({d, cur}, idx) => {
+      const key = dateKey(currentYear, currentMonth, d);
+      const isToday = cur && d === todayReal.getDate() && currentMonth === todayReal.getMonth() && currentYear === todayReal.getFullYear();
+      const isSel = cur && selectedDate === key;
+      const col = idx % 7;
+      const div = document.createElement('div');
+      div.className = 'day-cell'
+        + (!cur ? ' other-month' : '')
+        + (col === 0 ? ' sun' : col === 6 ? ' sat' : '')
+        + (isToday ? ' today' : '')
+        + (isSel ? ' selected' : '');
+      if (cur) div.onclick = () => selectDate(key, d);
+      const numDiv = document.createElement('div');
+      numDiv.className = 'day-num';
+      numDiv.textContent = d;
+      div.appendChild(numDiv);
+      if (cur && events[key] && events[key].length > 0) {
+        const dots = document.createElement('div');
+        dots.className = 'event-dots';
+        const seen = {cat: false, bear: false};
+        events[key].forEach(ev => {
+          if (!seen[ev.owner]) {
+            seen[ev.owner] = true;
+            const dot = document.createElement('div');
+            dot.className = 'event-dot';
+            dot.style.background = ev.owner === 'cat' ? '#c084f0' : '#b45309';
+            dots.appendChild(dot);
+          }
+        });
+        div.appendChild(dots);
+      }
+      grid.appendChild(div);
+    });
+  }
+
+  function selectDate(key, d) {
+    selectedDate = key;
+    const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    document.getElementById('detail-date').textContent = `${currentYear}年 ${months[currentMonth]} ${d}日`;
+    renderEvents(key);
+    renderCalendar();
+  }
+
+  function renderEvents(key) {
+    const list = document.getElementById('event-list');
+    const evs = events[key] || [];
+    if (!evs.length) {
+      list.innerHTML = '<div class="empty-state">🐱🐻<br>予定はまだないよ<br><span style="font-size:12px;">「追加」から入れてね</span></div>';
+      return;
+    }
+    list.innerHTML = '';
+    evs.forEach(ev => {
+      const isCat = ev.owner === 'cat';
+      const colors = isCat ? CAT_COLORS : BEAR_COLORS;
+      const icons = isCat ? CAT_ICONS : BEAR_ICONS;
+      const canDel = ev.owner === currentUser;
+      const c = document.createElement('div');
+      c.className = 'event-card';
+      c.style.borderLeftColor = colors[ev.cat] || colors.other;
+      const delBtn = document.createElement('button');
+      delBtn.className = 'event-delete' + (canDel ? '' : ' hidden');
+      delBtn.textContent = '×';
+      delBtn.setAttribute('aria-label', '削除');
+      if (canDel) delBtn.onclick = () => delEvent(key, ev.id);
+      c.innerHTML = `
+        <div class="event-owner">${isCat ? '🐱' : '🐻'}</div>
+        <div class="event-info">
+          <div class="event-title">${icons[ev.cat] || '🎀'} ${ev.title}</div>
+          ${ev.time ? `<div class="event-meta">🕐 ${ev.time}</div>` : ''}
+          ${ev.note ? `<div class="event-note">${ev.note}</div>` : ''}
+        </div>`;
+      c.appendChild(delBtn);
+      list.appendChild(c);
+    });
+  }
+
+  async function delEvent(key, id) {
+    const ok = await deleteEvent(id);
+    if (!ok) return;
+    events[key] = (events[key] || []).filter(e => e.id !== id);
+    renderEvents(key);
+    renderCalendar();
+  }
+
+  function changeMonth(dir) {
+    currentMonth += dir;
+    if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+    if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+    selectedDate = null;
+    document.getElementById('detail-date').textContent = '日付を選んでね';
+    document.getElementById('event-list').innerHTML = '<div class="empty-state">🐱🐻<br>日付を選んでね</div>';
+    renderCalendar();
+  }
+
+  function openModal() {
+    if (!selectedDate) { alert('まず日付を選んでね'); return; }
+    document.getElementById('ev-title').value = '';
+    document.getElementById('ev-time').value = '';
+    document.getElementById('ev-note').value = '';
+    document.getElementById('ev-cat').value = 'date';
+    const isCat = currentUser === 'cat';
+    document.getElementById('modal-title').textContent = (isCat ? '🐱 ういねこ' : '🐻 くまさん') + ' の予定を追加';
+    document.getElementById('modal-title').className = isCat ? '' : 'bear';
+    document.getElementById('btn-save').className = 'btn-save' + (isCat ? '' : ' bear');
+    document.getElementById('modal').style.display = 'flex';
+  }
+
+  function closeModal() {
+    document.getElementById('modal').style.display = 'none';
+  }
+
+  async function saveEvent() {
+    const title = document.getElementById('ev-title').value.trim();
+    if (!title) { alert('タイトルを入れてね'); return; }
+    const ev = {
+      title,
+      time: document.getElementById('ev-time').value.trim(),
+      cat: document.getElementById('ev-cat').value,
+      owner: currentUser,
+      note: document.getElementById('ev-note').value.trim()
+    };
+    document.getElementById('btn-save').textContent = '保存中…';
+    document.getElementById('btn-save').disabled = true;
+    const saved = await insertEvent(ev);
+    document.getElementById('btn-save').textContent = '保存する';
+    document.getElementById('btn-save').disabled = false;
+    if (!saved) return;
+    const newEv = { id: saved.id, title: saved.title, time: saved.time_str, cat: saved.cat, owner: saved.owner, note: saved.note };
+    if (!events[selectedDate]) events[selectedDate] = [];
+    events[selectedDate].push(newEv);
+    closeModal();
+    renderEvents(selectedDate);
+    renderCalendar();
+  }
+
+  // ========== 起動 ==========
+  loadEvents();
+</script>
+</body>
+</html>
